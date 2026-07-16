@@ -482,9 +482,8 @@ async def get_balance(session_obj, session_id):
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10),
        retry=retry_if_exception_type(aiohttp.ClientError))
 async def perform_check(session_url, code, chat_id, scan_id=None, recheck=False, message=None, plan_filters=None):
-    global RATE_LIMIT_DELAY
+    global RATE_LIMIT_DELAY, _connector
     await asyncio.sleep(RATE_LIMIT_DELAY) # Apply current rate limit
-    global _connector
 
     if not recheck:
         current_task = scan_tasks.get(chat_id)
@@ -568,13 +567,11 @@ async def perform_check(session_url, code, chat_id, scan_id=None, recheck=False,
                 logger.info(f"[voucher] code={code} status={req.status} resp={resp_json}")
                 
                 if 'request limited' in response_text.lower():
-                    global RATE_LIMIT_DELAY
                     RATE_LIMIT_DELAY = min(RATE_LIMIT_DELAY * RATE_LIMIT_FACTOR, RATE_LIMIT_MAX_DELAY)
                     logger.warning(f"Rate limited detected for code={code}. Increasing delay to {RATE_LIMIT_DELAY:.2f}s. Retrying with backoff.")
                     raise aiohttp.ClientError("Rate Limited") # Trigger tenacity retry
                 else:
                     # If successful, gradually reduce delay to optimize speed
-                    global RATE_LIMIT_DELAY
                     RATE_LIMIT_DELAY = max(0.1, RATE_LIMIT_DELAY / RATE_LIMIT_FACTOR)
 
                 # Check for success indicators in the response JSON
