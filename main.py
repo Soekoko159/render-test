@@ -100,8 +100,12 @@ async def get_file_content(path):
             data = await response.json()
             content = base64.b64decode(data['content']).decode('utf-8')
             return json.loads(content), data['sha']
-        logger.error(f"Failed to get {path} from GitHub: {response.status}")
-        response.raise_for_status()
+        elif response.status == 404:
+            logger.info(f"{path} not found on GitHub. Returning empty data.")
+            return {}, None
+        else:
+            logger.error(f"Failed to get {path} from GitHub: {response.status}")
+            response.raise_for_status()
     return {}, None
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
