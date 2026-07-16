@@ -214,16 +214,30 @@ def get_random_proxy():
 class CodeIterator:
     def __init__(self, mode, last_code=None):
         self.mode = mode
-        self.current_index = 0
-        self.codes = []
+        self.last_code = last_code
+        self.checked_count = 0
         if mode in ["6", "7"]:
-            length = int(mode)
-            self.codes = [str(i).zfill(length) for i in range(10 ** length)]
-            random.shuffle(self.codes)
-            if last_code and last_code in self.codes:
-                self.current_index = self.codes.index(last_code) + 1
+            self.length = int(mode)
+            self.max_val = 10 ** self.length
+            # Use a simple LCG (Linear Congruential Generator) to get pseudo-random sequence
+            # without storing all numbers in memory.
+            # For 10^6, we can use a multiplier and increment that are coprime to 10^6.
+            # A common choice for LCG: a = 1664525, c = 1013904223, m = 2^32
+            # But we need it to cycle through exactly 10^length.
+            # Using a simpler LCG with m = 10^length, a = coprime to 10, c = coprime to 10.
+            self.a = 1664525 * 4 + 1 # Must be 1 mod 4 if m is power of 2, but here m is 10^L.
+            # For m = 10^L, a should be 1 mod 20 for better distribution.
+            self.a = 21 # Simple coprime to 10
+            self.c = 321457 # Simple prime
+            
+            if last_code and last_code.isdigit():
+                self.current_val = int(last_code)
+            else:
+                # Start at a random point
+                self.current_val = random.randint(0, self.max_val - 1)
+            self.start_val = self.current_val
+            self.first_yield = True
         elif mode in ["8", "9", "ascii-lower", "all"]:
-            # For random modes, we don't store all, just generate on the fly
             pass
         else:
             raise ValueError(f"Unsupported scan mode: {mode}")
@@ -232,28 +246,38 @@ class CodeIterator:
         return self
 
     def __next__(self):
+        self.checked_count += 1
         if self.mode in ["6", "7"]:
-            if self.current_index < len(self.codes):
-                code = self.codes[self.current_index]
-                self.current_index += 1
-                return code
+            if self.first_yield:
+                self.first_yield = False
             else:
-                raise StopIteration
+                # LCG formula: X_{n+1} = (a * X_n + c) % m
+                self.current_val = (self.a * self.current_val + self.c) % self.max_val
+                if self.current_val == self.start_val:
+                    raise StopIteration
+            
+            code = str(self.current_val).zfill(self.length)
+            self.last_code = code
+            return code
         elif self.mode in ["8", "9"]:
             length = int(self.mode)
-            return "".join(random.choice(string.digits) for _ in range(length))
+            code = "".join(random.choice(string.digits) for _ in range(length))
+            self.last_code = code
+            return code
         elif self.mode == "ascii-lower":
-            return "".join(random.choice(string.ascii_lowercase) for _ in range(6))
+            code = "".join(random.choice(string.ascii_lowercase) for _ in range(6))
+            self.last_code = code
+            return code
         elif self.mode == "all":
             chars = string.ascii_lowercase + string.digits
-            return "".join(random.choice(chars) for _ in range(6))
+            code = "".join(random.choice(chars) for _ in range(6))
+            self.last_code = code
+            return code
         else:
             raise StopIteration
 
     def get_last_code(self):
-        if self.mode in ["6", "7"] and self.current_index > 0:
-            return self.codes[self.current_index - 1]
-        return None
+        return self.last_code
 
 def iter_codes(mode, last_code=None):
     return CodeIterator(mode, last_code)
