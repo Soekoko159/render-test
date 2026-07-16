@@ -1279,6 +1279,15 @@ async def echo_all(message):
 
 async def main():
     global session, _connector
+    
+    # Resolve 409 Conflict by deleting any existing webhook before starting polling
+    try:
+        logger.info("Cleaning up Telegram webhooks to avoid 409 Conflict...")
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook cleaned successfully.")
+    except Exception as e:
+        logger.warning(f"Failed to delete webhook: {e}")
+
     # Use aiohttp.TCPConnector with limit=0 for no limit on total connections,
     # but limit_per_host for connections to a single host. This helps with concurrency.
     _connector = aiohttp.TCPConnector(limit=0, limit_per_host=CONCURRENCY)
@@ -1287,10 +1296,11 @@ async def main():
     load_state()
     await load_saved_results()
 
+    logger.info("Starting bot polling...")
     await asyncio.gather(
         web_server(),
         github_update_scheduler(),
-        bot.polling(non_stop=True, interval=0)
+        bot.polling(non_stop=True, interval=1, timeout=20) # Added interval and timeout for stability
     )
 
 if __name__ == '__main__': # Corrected entry point
