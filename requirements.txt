@@ -1,6 +1,8 @@
-flask
 pyTelegramBotAPI
 aiohttp
-opencv-python-headless
+requests
 ddddocr
+opencv-python-headless
 numpy
+tenacity
+flask
